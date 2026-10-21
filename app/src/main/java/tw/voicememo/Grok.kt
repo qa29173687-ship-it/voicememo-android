@@ -41,7 +41,7 @@ object Grok {
 5. 優先度：只能是「高」「中」「低」。
 6. 摘要：3 到 5 點重點。
 
-請「只」回覆一個 ```json 程式碼區塊，不要其他文字，格式如下：
+請把整個回覆放在「一個」```json 程式碼區塊裡（待辦和摘要都在同一個區塊，方便我按一次複製鍵就全部複製），區塊外不要有任何文字。格式如下：
 ```json
 {"todos":[{"內容":"…","負責人":null,"時間":null,"優先度":"中"}],"摘要":["…"]}
 ```
@@ -52,7 +52,7 @@ ${n.text.trim()}"""
     /** 送到 Grok App；沒裝就複製＋分享選單。回傳 true 表示有開啟 Grok */
     fun send(a: Activity, n: Note): Boolean {
         val p = prompt(n, ZonedDateTime.now(Names.zone))
-        a.getSharedPreferences("ui", Context.MODE_PRIVATE).edit().putLong("grokSrc", n.id).apply()
+        a.getSharedPreferences("ui", Context.MODE_PRIVATE).edit().putLong("grokSrc", n.id).putLong("grokAt", System.currentTimeMillis()).apply()
         val long = p.length > LONG
         if (long) copy(a, p)
         val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, p)
@@ -62,6 +62,20 @@ ${n.text.trim()}"""
             copy(a, p); Toast.makeText(a, "已複製，請貼到 Grok", Toast.LENGTH_LONG).show()
             runCatching { a.startActivity(Intent.createChooser(i, "送到 Grok 整理")) }; false
         }
+    }
+    const val MARK = "請幫我整理下面這段錄音逐字稿"
+    /** 從 Grok 回來時自動讀剪貼簿（需在視窗取得焦點後呼叫）；2 小時內有待處理的請求且剪貼簿像是待辦就直接開確認畫面 */
+    fun autoCheck(a: Activity): Boolean {
+        val p = a.getSharedPreferences("ui", Context.MODE_PRIVATE); val at = p.getLong("grokAt", 0); val id = p.getLong("grokSrc", 0)
+        if (at == 0L || id == 0L) return false
+        if (System.currentTimeMillis() - at > 2 * 3600_000) { p.edit().remove("grokAt").apply(); return false }
+        val c = runCatching { clip(a) }.getOrDefault(""); if (c.isBlank() || c.contains(MARK)) return false
+        val h = c.hashCode(); if (p.getInt("grokSeen", 0) == h) return false
+        p.edit().putInt("grokSeen", h).apply()
+        val r = parseReply(c, ZonedDateTime.now(Names.zone)); if (r.todos.isEmpty() && r.summary.isEmpty()) return false
+        if (Store.get(a, id) == null) return false
+        p.edit().remove("grokAt").apply()
+        a.startActivity(Intent(a, TodoActivity::class.java).putExtra("id", id).putExtra("text", c)); return true
     }
     fun copy(ctx: Context, s: String) = ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("錄音記事本", s))
     fun clip(ctx: Context): String = ctx.getSystemService(ClipboardManager::class.java).primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString() ?: ""

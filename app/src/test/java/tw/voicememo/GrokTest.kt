@@ -89,3 +89,23 @@ class GrokTest {
         assertEquals(r.copy(todos = r.todos), p(Grok.toJson(r)))
     }
 }
+
+@RunWith(RobolectricTestRunner::class) @Config(sdk = [33])
+class AutoPasteTest {
+    @Test fun autoOpensReview() {
+        val a = org.robolectric.Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val n = Note(1792500000000, "讀書會", text = "小美：明天下午三點交報告"); Store.save(a, n)
+        val sp = a.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE)
+        // 剪貼簿是我們自己的提示詞 → 不觸發
+        sp.edit().putLong("grokSrc", n.id).putLong("grokAt", System.currentTimeMillis()).apply()
+        Grok.copy(a, Grok.prompt(n, ZonedDateTime.now())); assertEquals(false, Grok.autoCheck(a))
+        // Grok 回覆 → 自動開確認畫面，並清掉待處理
+        Grok.copy(a, "```json\n{\"todos\":[{\"內容\":\"交報告\",\"負責人\":\"小美\",\"時間\":null,\"優先度\":\"高\"}],\"摘要\":[\"a\"]}\n```")
+        assertEquals(true, Grok.autoCheck(a))
+        val next = org.robolectric.Shadows.shadowOf(a).nextStartedActivity
+        assertEquals(TodoActivity::class.java.name, next.component!!.className); assertEquals(n.id, next.getLongExtra("id", 0))
+        assertEquals(false, Grok.autoCheck(a)) // 已清除
+        // 超過 2 小時 → 不觸發
+        sp.edit().putLong("grokAt", System.currentTimeMillis() - 3 * 3600_000).putInt("grokSeen", 0).apply(); assertEquals(false, Grok.autoCheck(a))
+    }
+}

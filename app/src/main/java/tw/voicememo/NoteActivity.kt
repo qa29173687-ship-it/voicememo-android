@@ -253,6 +253,7 @@ class NoteActivity : AppCompatActivity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() { if (save()) @Suppress("DEPRECATION") super.onBackPressed() }
     override fun onPause() { super.onPause(); player?.let { if (it.isPlaying) { it.pause(); playBtn.text = "▶" } } }
+    override fun onWindowFocusChanged(has: Boolean) { super.onWindowFocusChanged(has); if (has) Grok.autoCheck(this) }
     override fun onResume() { super.onResume(); h.removeCallbacks(asrPoll); h.post(asrPoll) }
     override fun onDestroy() { h.removeCallbacks(tick); h.removeCallbacks(asrPoll); player?.release(); player = null; super.onDestroy() }
 }

@@ -215,6 +215,7 @@ class MainActivity : AppCompatActivity() {
                       else Toast.makeText(this, "需要麥克風權限才能錄音", Toast.LENGTH_LONG).show() }
     }
     override fun onNewIntent(i: Intent) { super.onNewIntent(i); if (i.getBooleanExtra("list", false)) show(true) }
+    override fun onWindowFocusChanged(has: Boolean) { super.onWindowFocusChanged(has); if (has) Grok.autoCheck(this) }
     override fun onResume() { super.onResume(); reload(); h.removeCallbacks(poll); h.post(poll) }
     override fun onPause() { super.onPause(); h.removeCallbacks(poll) }
     @Deprecated("Deprecated in Java")

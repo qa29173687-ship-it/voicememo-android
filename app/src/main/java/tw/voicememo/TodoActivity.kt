@@ -43,7 +43,7 @@ class TodoActivity : AppCompatActivity() {
         createBtn = btn("建立", C.OR, 0xFF1A1000.toInt()) { create() }.apply { visibility = View.GONE }
         col.addView(createBtn, lp(MP, WC).apply { topMargin = dp(20) })
         setContentView(ScrollView(this).apply { setBackgroundColor(C.BG); addView(col) })
-        if (!intent.getBooleanExtra("preview", false)) { val c = Grok.clip(this); if (c.isNotBlank()) fromText(c, quiet = true) else status.text = "在 Grok 複製整理好的回覆後，按「從剪貼簿貼上」" }
+        if (!intent.getBooleanExtra("preview", false)) { val c = intent.getStringExtra("text") ?: Grok.clip(this).takeIf { !it.contains(Grok.MARK) } ?: ""; if (c.isNotBlank()) fromText(c, quiet = true) else status.text = "在 Grok 複製整理好的回覆後，按「從剪貼簿貼上」" }
     }
 
     private lateinit var pasteBox: android.widget.EditText; private lateinit var parseBtn: TextView
