@@ -55,7 +55,10 @@ class MainActivity : AppCompatActivity() {
         tabRec = tv("🎙  錄音", 15f, C.OR, true).apply { gravity = Gravity.CENTER; setPadding(0, dp(10), 0, dp(10)); setOnClickListener { show(false) } }
         tabList = tv("📋  記事", 15f, C.SUB, true).apply { gravity = Gravity.CENTER; setPadding(0, dp(10), 0, dp(10)); setOnClickListener { show(true) } }
         tabs.addView(tabRec, lp(0, WC, 1f)); tabs.addView(tabList, lp(0, WC, 1f)); root.addView(tabs)
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(root); show(false)
+        // 標題避開狀態列／瀏海；底部分頁列避開三鍵或手勢導覽列
+        EdgeInsets.pad(root, bottom = false); EdgeInsets.pad(tabs, top = false, left = false, right = false)
     }
 
     private fun buildRec(): View = LinearLayout(this).apply {

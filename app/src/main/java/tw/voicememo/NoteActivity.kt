@@ -133,7 +133,10 @@ class NoteActivity : AppCompatActivity() {
         })
 
         col.addView(btn("儲存", C.OR, 0xFF1A1000.toInt()) { if (save()) finish() }, lp(MP, WC).apply { topMargin = dp(24) })
-        setContentView(ScrollView(this).apply { setBackgroundColor(C.BG); addView(col) })
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        val sv = ScrollView(this).apply { setBackgroundColor(C.BG); clipToPadding = false; addView(col) }
+        setContentView(sv)
+        EdgeInsets.pad(sv, ime = true)  // 狀態列、導覽列、鍵盤
         if (isNew) autoType() else setType(note.type, false)
     }
 
