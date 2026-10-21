@@ -35,7 +35,7 @@ class AlarmReceiver : BroadcastReceiver() {
         nm.createNotificationChannel(NotificationChannel("remind", "提醒", NotificationManager.IMPORTANCE_HIGH))
         val open = PendingIntent.getActivity(ctx, (n.id % Int.MAX_VALUE).toInt(),
             Intent(ctx, NoteActivity::class.java).putExtra("id", n.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val body = listOf(n.caseNo, n.building, n.floor).filter { it.isNotBlank() }.joinToString(" ").ifEmpty { n.text.take(60) }
+        val body = n.text.take(80)
         try { nm.notify((n.id % Int.MAX_VALUE).toInt(), NotificationCompat.Builder(ctx, "remind").setSmallIcon(R.drawable.ic_mic)
             .setContentTitle("⏰ ${n.title}").setContentText(body).setAutoCancel(true).setContentIntent(open)
             .setPriority(NotificationCompat.PRIORITY_HIGH).setCategory(NotificationCompat.CATEGORY_REMINDER).build()) } catch (e: SecurityException) { }

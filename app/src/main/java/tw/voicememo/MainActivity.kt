@@ -30,7 +30,7 @@ class MainActivity : AppCompatActivity() {
     private val filterViews = mutableListOf<TextView>()
     private var notes = listOf<Note>(); private var shown = listOf<Note>(); private var query = ""; var filter = -1
     private var selecting = false; private val selected = mutableSetOf<Long>()
-    private val h = Handler(Looper.getMainLooper())
+    private val h = Handler(Looper.getMainLooper()); private var ticks = 0; private var hadAsr = false
     private val poll = object : Runnable { override fun run() { render(); h.postDelayed(this, 100) } }
     private val adapter = object : BaseAdapter() {
         override fun getCount() = shown.size
@@ -44,7 +44,8 @@ class MainActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(C.BG) }
         val head = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(20), dp(18), dp(16), dp(8)) }
         head.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL
-            addView(tv("錄音記事本", 24f, C.TX, true)); addView(tv("中和安邦社宅 · 現場紀錄", 13f, C.SUB)) }, lp(0, WC, 1f))
+            addView(tv("錄音記事本", 24f, C.TX, true)); addView(tv("錄音 · 提醒 · 備忘 · 筆記", 13f, C.SUB)) }, lp(0, WC, 1f))
+        head.addView(btn("⚙") { settings() }, lp(WC, WC).apply { rightMargin = dp(8) })
         head.addView(btn("＋ 文字", C.CARD2, C.OR) { startActivity(Intent(this, NoteActivity::class.java).putExtra("textOnly", true)) })
         root.addView(head)
         val pages = FrameLayout(this)
@@ -82,7 +83,7 @@ class MainActivity : AppCompatActivity() {
             filterViews += v; seg.addView(v, lp(0, WC, 1f))
         }
         addView(seg)
-        addView(field("🔍  搜尋標題、內容、案號、棟別…").apply {
+        addView(field("🔍  搜尋標題、內容、標籤…").apply {
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                 override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -115,11 +116,10 @@ class MainActivity : AppCompatActivity() {
         col.addView(top)
         val meta = mutableListOf(Names.date(Names.at(n.id)))
         if (n.hasAudio) meta += "🎙 " + Names.dur(n.durationMs)
-        if (n.caseNo.isNotBlank()) meta += "案號 ${n.caseNo}"
+        Transcriber.status(n.id)?.let { meta += it }
         col.addView(tv(meta.joinToString("  ·  "), 13f, C.SUB).apply { setPadding(0, dp(4), 0, 0) })
         val extra = mutableListOf<String>()
         if (n.type == Note.REMIND && n.remindAt > 0) extra += "⏰ " + Names.date(Names.at(n.remindAt)) + if (n.remindAt < System.currentTimeMillis()) "（已過）" else ""
-        listOf(n.building, n.floor).filter { it.isNotBlank() }.joinToString(" ").takeIf { it.isNotEmpty() }?.let { extra += it }
         if (n.tags.isNotBlank()) extra += n.tags.split(Regex("[,，\\s]+")).filter { it.isNotBlank() }.joinToString(" ") { "#$it" }
         if (extra.isNotEmpty()) col.addView(tv(extra.joinToString("  ·  "), 13f, C.OR).apply { setPadding(0, dp(3), 0, 0) })
         if (n.text.isNotBlank()) col.addView(tv(n.text.replace('\n', ' '), 13f, 0xFFBFC1C7.toInt()).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, dp(3), 0, 0) })
@@ -157,8 +157,27 @@ class MainActivity : AppCompatActivity() {
         if (st == 1) level.push(sqrt(RecService.amp / 32767f)) else if (st == 0) level.clear()
         recBtn.recording = st != 0; controls.visibility = if (st == 0) View.INVISIBLE else View.VISIBLE
         pauseBtn.text = if (st == 2) "▶  繼續" else "⏸  暫停"
+        Transcriber.error?.let { Transcriber.error = null; Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
+        if (++ticks % 10 == 0 && listPage.visibility == View.VISIBLE && (Transcriber.progress.isNotEmpty() || hadAsr)) { hadAsr = Transcriber.progress.isNotEmpty(); reload() }
         RecService.error?.let { RecService.error = null; Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
         if (st == 0) RecService.pending(this)?.let { h.removeCallbacks(poll); startActivity(Intent(this, NoteActivity::class.java).putExtra("pending", true)) }
+    }
+
+    private fun settings() {
+        val ui = getSharedPreferences("ui", MODE_PRIVATE)
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(8), dp(22), 0) }
+        box.addView(tv("語音轉文字：SenseVoice Small（離線、免費）", 15f, C.TX, true))
+        val st = tv("", 14f, C.SUB).apply { setPadding(0, dp(6), 0, dp(10)) }; box.addView(st)
+        fun upd() { st.text = when { Transcriber.downloading >= 0 -> "下載中 ${Transcriber.downloading}%"; AsrModel.ready(this) -> "模型已下載（約 ${AsrModel.SIZE_MB}MB）"; else -> "模型未下載（約 ${AsrModel.SIZE_MB}MB，第一次轉文字時下載）" } }
+        upd()
+        val sw = androidx.appcompat.widget.SwitchCompat(this).apply { text = "錄完自動轉文字"; setTextColor(C.TX); isChecked = ui.getBoolean("autoAsr", true)
+            setOnCheckedChangeListener { _, c -> ui.edit().putBoolean("autoAsr", c).apply() } }
+        box.addView(sw)
+        val d = androidx.appcompat.app.AlertDialog.Builder(this).setTitle("設定").setView(box).setPositiveButton("完成", null)
+            .setNeutralButton("刪除模型") { _, _ ->
+                if (Transcriber.downloading >= 0) Toast.makeText(this, "下載中，請先取消", Toast.LENGTH_SHORT).show()
+                else { AsrModel.delete(this); Toast.makeText(this, "已刪除語音模型", Toast.LENGTH_SHORT).show() } }.show()
+        d.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).isEnabled = AsrModel.ready(this)
     }
 
     private fun onRecTap() {

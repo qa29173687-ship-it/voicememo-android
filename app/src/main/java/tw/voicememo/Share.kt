@@ -52,7 +52,7 @@ object Share {
             val f = Store.audio(a, n)
             if (n.hasAudio && f.exists()) uris += FileProvider.getUriForFile(a, auth, f)
             if (withTxt || !n.hasAudio) {
-                val name = if (n.hasAudio) f.nameWithoutExtension else Names.base(Names.at(n.id), n.caseNo)
+                val name = if (n.hasAudio) f.nameWithoutExtension else Names.base(Names.at(n.id), n.title)
                 val t = File(share, "$name.txt"); t.writeText(Names.noteText(n)); uris += FileProvider.getUriForFile(a, auth, t); onlyAudio = false
             }
         }

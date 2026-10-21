@@ -10,23 +10,23 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 data class Note(
-    var id: Long, var title: String, var caseNo: String = "", var building: String = "", var floor: String = "",
-    var text: String = "", var address: String = "", var coords: String = "", var file: String = "",
+    var id: Long, var title: String,
+    var text: String = "", var file: String = "",
     var durationMs: Long = 0, var exported: String = "",
     var type: Int = MEMO, var remindAt: Long = 0, var pinned: Boolean = false, var done: Boolean = false, var tags: String = "",
+    var autoType: Boolean = true, var asr: Int = 0, // asr 0 無 1 進行中/部分 2 完成
 ) {
     val hasAudio get() = file.isNotBlank()
-    fun toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("caseNo", caseNo).put("building", building)
-        .put("floor", floor).put("text", text).put("address", address).put("coords", coords).put("file", file)
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("text", text).put("file", file)
         .put("durationMs", durationMs).put("exported", exported)
-        .put("type", type).put("remindAt", remindAt).put("pinned", pinned).put("done", done).put("tags", tags)
+        .put("type", type).put("remindAt", remindAt).put("pinned", pinned).put("done", done).put("tags", tags).put("autoType", autoType).put("asr", asr)
     companion object {
         const val REMIND = 0; const val MEMO = 1; const val NOTE = 2
         val TYPES = arrayOf("提醒", "備忘", "筆記")
-        fun from(o: JSONObject) = Note(o.getLong("id"), o.optString("title"), o.optString("caseNo"), o.optString("building"),
-            o.optString("floor"), o.optString("text"), o.optString("address"), o.optString("coords"), o.optString("file"),
+        fun from(o: JSONObject) = Note(o.getLong("id"), o.optString("title"), o.optString("text"), o.optString("file"),
             o.optLong("durationMs"), o.optString("exported"),
-            o.optInt("type", MEMO), o.optLong("remindAt"), o.optBoolean("pinned"), o.optBoolean("done"), o.optString("tags"))
+            o.optInt("type", MEMO), o.optLong("remindAt"), o.optBoolean("pinned"), o.optBoolean("done"), o.optString("tags"),
+            o.optBoolean("autoType", true), o.optInt("asr"))
     }
 }
 
@@ -34,8 +34,11 @@ object Names {
     var zone: ZoneId = ZoneId.systemDefault()
     fun at(ms: Long): ZonedDateTime = Instant.ofEpochMilli(ms).atZone(zone)
     fun safe(s: String) = s.trim().replace(Regex("[^\\p{L}\\p{N}_-]+"), "-").trim('-')
-    fun base(t: ZonedDateTime, caseNo: String): String {
-        val b = t.format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")); val c = safe(caseNo)
+    fun isDefaultTitle(s: String) = Regex("^\\d{4}/\\d{2}/\\d{2} \\d{2}:\\d{2} (錄音|記事)$").matches(s.trim())
+    /** yyyyMMdd_HHmmss_標題前 10 字 */
+    fun base(t: ZonedDateTime, title: String): String {
+        val b = t.format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+        val c = if (isDefaultTitle(title)) "" else safe(title).take(10).trim('-')
         return if (c.isEmpty()) b else "${b}_$c"
     }
     fun defaultTitle(t: ZonedDateTime) = t.format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm")) + " 錄音"
@@ -49,17 +52,12 @@ object Names {
         if (n.type == Note.REMIND && n.remindAt > 0) appendLine("提醒時間：${date(at(n.remindAt))}")
         if (n.tags.isNotBlank()) appendLine("標籤：${n.tags}")
         appendLine("時間：${date(at(n.id))}"); appendLine("長度：${dur(n.durationMs)}")
-        if (n.caseNo.isNotBlank()) appendLine("案號：${n.caseNo}")
-        if (n.building.isNotBlank()) appendLine("棟別：${n.building}")
-        if (n.floor.isNotBlank()) appendLine("樓層：${n.floor}")
-        if (n.address.isNotBlank()) appendLine("地址：${n.address}")
-        if (n.coords.isNotBlank()) appendLine("經緯度：${n.coords}")
         if (n.file.isNotBlank()) appendLine("錄音檔：${n.file}")
         if (n.text.isNotBlank()) { appendLine(); appendLine("內容／逐字稿："); appendLine(n.text) }
     }
     fun match(n: Note, q: String): Boolean {
         val k = q.trim(); if (k.isEmpty()) return true
-        return listOf(n.title, n.tags, n.caseNo, n.building, n.floor, n.text, n.address, date(at(n.id))).any { it.contains(k, true) }
+        return listOf(n.title, n.tags, n.text, date(at(n.id))).any { it.contains(k, true) }
     }
 }
 
@@ -122,10 +120,33 @@ object TimeParse {
             if (h != null && h < 6 && p == "中午") h += 12
         }
         if (h == null && day == null) return null
+        if (h == null && day == now.toLocalDate()) return null
         if (h != null && (h > 23 || mi > 59)) return null
         val d = day ?: now.toLocalDate()
         var t = d.atTime(h ?: 9, mi).atZone(now.zone)
         if (day == null && !t.isAfter(now)) t = t.plusDays(1)
         return t
+    }
+}
+
+object TimeScan {
+    /** 逐句找時間；回傳未來的時間點（由早到晚），附來源句子 */
+    fun all(text: String, now: ZonedDateTime): List<Pair<ZonedDateTime, String>> {
+        val out = mutableListOf<Pair<ZonedDateTime, String>>()
+        val parts = text.split(Regex("[。！？\\n]")).flatMap { s -> listOf(s) }
+        for (p in parts) {
+            val clauses = p.split(Regex("[，,；;]")).map { it.trim() }.filter { it.isNotEmpty() }
+            var i = 0
+            while (i < clauses.size) {
+                // 「明天，下午三點」這類跨逗號的情況：先試合併兩段
+                val two = if (i + 1 < clauses.size) clauses[i] + clauses[i + 1] else null
+                val t1 = TimeParse.find(clauses[i], now)
+                val t2 = two?.let { TimeParse.find(it, now) }
+                val use = if (t2 != null && t1 != null && t2 != t1 && TimeParse.find(clauses[i + 1], now) != null) { i++; t2 } else t1
+                if (use != null && use.isAfter(now)) out += use to clauses[i]
+                i++
+            }
+        }
+        return out.distinctBy { it.first }.sortedBy { it.first }
     }
 }

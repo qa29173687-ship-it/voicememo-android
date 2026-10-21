@@ -13,7 +13,8 @@ class LogicTest {
     private fun f(s: String) = TimeParse.find(s, now)?.toLocalDateTime()?.toString()
     @Test fun names() {
         val t = ZonedDateTime.of(2026, 10, 21, 10, 14, 2, 0, tz)
-        assertEquals("20261021_101402_A-1023", Names.base(t, "A-1023")); assertEquals("20261021_101402", Names.base(t, " "))
+        assertEquals("20261021_101402_明天下午去郵局寄包裹", Names.base(t, "明天下午去郵局寄包裹給媽媽")); assertEquals("20261021_101402", Names.base(t, " "))
+        assertEquals("20261021_101402", Names.base(t, "2026/10/21 10:14 錄音"))
         assertEquals("A-1-2-3", Names.safe("A/1 2:3")); assertEquals("2026/10/21 10:14 錄音", Names.defaultTitle(t))
         assertEquals("01:05", Names.dur(65_000)); assertEquals("1:00:05", Names.dur(3_605_000))
     }
@@ -25,11 +26,35 @@ class LogicTest {
         assertEquals("2026-10-28T10:15", f("下週三上午十點十五分會勘"))
         assertEquals("2026-10-24T14:00", f("10月24日 14:00 驗收"))
         assertEquals("2026-10-22T10:00", f("10點換燈管")) // 今天已過→明天
-        assertNull(f("B棟5F浴室漏水，需要換止水閥"))
-        assertNull(f("5F"))
+        assertNull(f("今天心情不錯，去公園散步"))
+        assertNull(f("五個蘋果"))
     }
     @Test fun textAndMatch() {
-        val n = Note(1792722842000, "漏水", caseNo = "A-1023", building = "B棟", text = "止水閥", tags = "水電", type = Note.REMIND, remindAt = 1792722842000)
-        assertTrue(Names.noteText(n).contains("案號：A-1023")); assertTrue(Names.match(n, "水電")); assertTrue(Names.match(n, "a-1023"))
+        val n = Note(1792722842000, "買菜", text = "記得買牛奶", tags = "家裡", type = Note.REMIND, remindAt = 1792722842000)
+        assertTrue(Names.noteText(n).contains("提醒時間")); assertTrue(Names.match(n, "家裡")); assertTrue(Names.match(n, "牛奶"))
+    }
+}
+
+class S2TTest {
+    private val c = S2T(java.io.File("src/main/assets/s2t.txt").inputStream(), java.io.File("src/main/assets/tw.txt").inputStream())
+    private val now = ZonedDateTime.of(2026, 10, 21, 12, 30, 0, 0, ZoneId.of("Asia/Taipei"))
+    @Test fun convert() {
+        assertEquals("明天下午三點記得去郵局寄包裹。", c.convert("明天下午三点记得去邮局寄包裹。"))
+        assertEquals("這個的頭髮乾淨，裡面", c.convert("这个的头发干净，里面"))
+        assertEquals("我們後天開會討論計劃", c.convert("我们后天开会讨论计划"))
+        assertEquals("下週三上午十點十五分", c.convert("下周三上午十点十五分"))
+    }
+    @Test fun transcriptPipeline() {
+        val segs = listOf(Triple(c.convert("嗯 提醒我明天下午三点"), 0.0, 2.0), Triple(c.convert("去邮局寄包裹"), 2.3, 4.0),
+            Triple(c.convert("还有十月二十四日下午两点要看牙医。"), 5.2, 8.0), Triple(c.convert("另外买牛奶"), 11.5, 13.0))
+        val t = Transcript.join(segs)
+        assertEquals("嗯提醒我明天下午三點，去郵局寄包裹。還有十月二十四日下午兩點要看牙醫。\n另外買牛奶。", t)
+        assertEquals("提醒我明天下午三點", Transcript.title(t))
+        val times = TimeScan.all(t, now).map { it.first.toLocalDateTime().toString() }
+        assertEquals(listOf("2026-10-22T15:00", "2026-10-24T14:00"), times)
+    }
+    @Test fun resampler() {
+        val r = Decoder.Resampler(48000); var n = 0; repeat(10) { n += r.process(FloatArray(4800) { 0.5f }).size }
+        assertTrue(n in 15990..16010)
     }
 }

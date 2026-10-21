@@ -32,10 +32,10 @@ class PreviewTest {
     }
     private fun seed() {
         Names.zone = ZoneId.of("Asia/Taipei"); val c = RuntimeEnvironment.getApplication()
-        Store.save(c, Note(ms(21, 9, 12), "B棟5F 浴室漏水", "A-1023", "B棟", "5F", "住戶反映天花板滴水，疑似樓上止水閥", file = "x.m4a", durationMs = 95_000, type = Note.REMIND, remindAt = ms(22, 15, 0)))
-        Store.save(c, Note(ms(21, 10, 40), "叫料：止水閥 x2、矽利康", "A-1023", type = Note.MEMO, pinned = true))
-        Store.save(c, Note(ms(20, 16, 5), "C棟電梯異音", "A-1019", "C棟", "", "已通知廠商", file = "y.m4a", durationMs = 42_000, type = Note.MEMO, done = true))
-        Store.save(c, Note(ms(20, 14, 0), "社宅巡檢紀錄", "", "A棟", "1F-3F", "公共走道燈管三支不亮；消防栓箱門鬆脫…", file = "z.m4a", durationMs = 612_000, type = Note.NOTE, tags = "巡檢 水電"))
+        Store.save(c, Note(ms(21, 9, 12), "明天下午三點去郵局寄包裹", "提醒我明天下午三點，去郵局寄包裹。\n順便買信封。", asr = 2, file = "x.m4a", durationMs = 95_000, type = Note.REMIND, remindAt = ms(22, 15, 0)))
+        Store.save(c, Note(ms(21, 10, 40), "買牛奶、雞蛋、衛生紙", type = Note.MEMO, pinned = true))
+        Store.save(c, Note(ms(20, 16, 5), "繳電話費", "已用網銀繳", file = "y.m4a", durationMs = 42_000, type = Note.MEMO, done = true))
+        Store.save(c, Note(ms(20, 14, 0), "讀書會：原子習慣", "今天討論第三章，重點是讓好習慣變得顯而易見。\n下次輪到我分享。", asr = 2, file = "z.m4a", durationMs = 612_000, type = Note.NOTE, tags = "讀書 習慣"))
     }
     @Test fun render() {
         seed()
