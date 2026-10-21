@@ -173,11 +173,25 @@ class MainActivity : AppCompatActivity() {
         val sw = androidx.appcompat.widget.SwitchCompat(this).apply { text = "錄完自動轉文字"; setTextColor(C.TX); isChecked = ui.getBoolean("autoAsr", true)
             setOnCheckedChangeListener { _, c -> ui.edit().putBoolean("autoAsr", c).apply() } }
         box.addView(sw)
+        box.addView(tv("分辨說話者：pyannote 3.0 + 3D-Speaker ERes2NetV2（約 ${AsrModel.DIAR_MB}MB）", 15f, C.TX, true).apply { setPadding(0, dp(16), 0, 0) })
+        val dst = tv(if (AsrModel.diarReady(this)) "模型已下載" else "模型未下載（開啟時第一次轉文字會下載）", 14f, C.SUB).apply { setPadding(0, dp(6), 0, dp(6)) }; box.addView(dst)
+        val cnt = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val dsw = androidx.appcompat.widget.SwitchCompat(this).apply { text = "分辨說話者"; setTextColor(C.TX); isChecked = ui.getBoolean("diar", true)
+            setOnCheckedChangeListener { _, c -> ui.edit().putBoolean("diar", c).apply(); cnt.alpha = if (c) 1f else .4f } }
+        box.addView(dsw)
+        cnt.addView(tv("人數", 14f, C.SUB).apply { setPadding(0, 0, dp(8), 0) })
+        val opts = listOf(0 to "自動", 2 to "2", 3 to "3", 4 to "4", 5 to "5+"); val vs = mutableListOf<TextView>()
+        fun paint() { val cur = ui.getInt("spk", 0); vs.forEachIndexed { i, v -> val on = opts[i].first == cur
+            v.setTextColor(if (on) 0xFF1A1000.toInt() else C.SUB); v.background = if (on) round(C.OR, dp(14).toFloat()) else null } }
+        opts.forEach { (k, t) -> val v = tv(t, 14f, C.SUB, true).apply { gravity = Gravity.CENTER; setPadding(dp(10), dp(6), dp(10), dp(6))
+            setOnClickListener { ui.edit().putInt("spk", k).apply(); paint() } }; vs += v; cnt.addView(v) }
+        paint(); cnt.alpha = if (dsw.isChecked) 1f else .4f; box.addView(cnt)
+        box.addView(tv("準確優先：先分辨說話者再逐段辨識，比只轉文字慢約 2–4 倍。", 12f, C.SUB).apply { setPadding(0, dp(8), 0, 0) })
         val d = androidx.appcompat.app.AlertDialog.Builder(this).setTitle("設定").setView(box).setPositiveButton("完成", null)
             .setNeutralButton("刪除模型") { _, _ ->
-                if (Transcriber.downloading >= 0) Toast.makeText(this, "下載中，請先取消", Toast.LENGTH_SHORT).show()
-                else { AsrModel.delete(this); Toast.makeText(this, "已刪除語音模型", Toast.LENGTH_SHORT).show() } }.show()
-        d.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).isEnabled = AsrModel.ready(this)
+                if (Transcriber.downloading >= 0 || Transcriber.progress.isNotEmpty()) Toast.makeText(this, "轉文字或下載中，請先取消", Toast.LENGTH_SHORT).show()
+                else { AsrModel.delete(this); AsrModel.deleteDiar(this); Toast.makeText(this, "已刪除語音與說話者模型", Toast.LENGTH_SHORT).show() } }.show()
+        d.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).isEnabled = AsrModel.ready(this) || AsrModel.diarReady(this)
     }
 
     private fun onRecTap() {

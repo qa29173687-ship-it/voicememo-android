@@ -58,3 +58,29 @@ class S2TTest {
         assertTrue(n in 15990..16010)
     }
 }
+
+class DiarTest {
+    private fun t(s: Int, x: String, a: Double) = Diar.Turn(s, x, a, a + 2)
+    @Test fun labelsAndMerge() {
+        val out = Transcript.speakers(listOf(t(3, "明天下午三點開會", 0.0), t(3, "記得帶筆電", 2.5), t(0, "好，我會準備報告。", 5.0), t(3, "謝謝", 8.0)))
+        assertEquals("說話者 1：明天下午三點開會，記得帶筆電。\n說話者 2：好，我會準備報告。\n說話者 1：謝謝。", out)
+        assertEquals(listOf("說話者 1", "說話者 2"), Transcript.labels(out))
+        val r = Transcript.rename(out, "說話者 1", "小明")
+        assertEquals("小明：明天下午三點開會，記得帶筆電。\n說話者 2：好，我會準備報告。\n小明：謝謝。", r)
+        assertEquals("明天下午三點開會", Transcript.title(out))
+    }
+    @Test fun singleSpeakerNoLabels() {
+        val out = Transcript.speakers(listOf(t(1, "第一句", 0.0), t(1, "第二句", 5.0)))
+        assertEquals("第一句。\n第二句。", out); assertTrue(Transcript.labels(out).isEmpty())
+    }
+    @Test fun mergeSegs() {
+        val m = Diar.merge(listOf(Diar.Seg(0, 16000, 0), Diar.Seg(20000, 40000, 0), Diar.Seg(80000, 90000, 0), Diar.Seg(90000, 99000, 1)))
+        assertEquals(listOf(Diar.Seg(0, 40000, 0), Diar.Seg(80000, 90000, 0), Diar.Seg(90000, 99000, 1)), m)
+    }
+    @Test fun linker() {
+        val l = Diar.Linker(0)
+        assertEquals(0, l.assign(floatArrayOf(1f, 0f, 0f))); assertEquals(1, l.assign(floatArrayOf(0f, 1f, 0f)))
+        assertEquals(0, l.assign(floatArrayOf(.9f, .1f, 0f))); assertEquals(2, l.assign(floatArrayOf(0f, 0f, 1f)))
+        val c = Diar.Linker(2); c.assign(floatArrayOf(1f, 0f)); c.assign(floatArrayOf(0f, 1f)); assertEquals(1, c.assign(floatArrayOf(-.2f, 1f)))
+    }
+}

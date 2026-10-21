@@ -35,7 +35,7 @@ class PreviewTest {
         Store.save(c, Note(ms(21, 9, 12), "明天下午三點去郵局寄包裹", "提醒我明天下午三點，去郵局寄包裹。\n順便買信封。", asr = 2, file = "x.m4a", durationMs = 95_000, type = Note.REMIND, remindAt = ms(22, 15, 0)))
         Store.save(c, Note(ms(21, 10, 40), "買牛奶、雞蛋、衛生紙", type = Note.MEMO, pinned = true))
         Store.save(c, Note(ms(20, 16, 5), "繳電話費", "已用網銀繳", file = "y.m4a", durationMs = 42_000, type = Note.MEMO, done = true))
-        Store.save(c, Note(ms(20, 14, 0), "讀書會：原子習慣", "今天討論第三章，重點是讓好習慣變得顯而易見。\n下次輪到我分享。", asr = 2, file = "z.m4a", durationMs = 612_000, type = Note.NOTE, tags = "讀書 習慣"))
+        Store.save(c, Note(ms(20, 14, 0), "讀書會：原子習慣", "小美：今天討論第三章，重點是讓好習慣變得顯而易見。\n說話者 2：我覺得環境設計那段最有用。\n小美：好，下次輪到你分享。", asr = 2, file = "z.m4a", durationMs = 612_000, type = Note.NOTE, tags = "讀書 習慣"))
     }
     @Test fun render() {
         seed()
@@ -49,6 +49,6 @@ class PreviewTest {
         val e = Robolectric.buildActivity(NoteActivity::class.java, Intent(c, NoteActivity::class.java).putExtra("id", ms(21, 9, 12))).setup().get()
         shot(e, "4-編輯-提醒")
         val n = Robolectric.buildActivity(NoteActivity::class.java, Intent(c, NoteActivity::class.java).putExtra("id", ms(20, 14, 0))).setup().get()
-        shot(n, "5-編輯-筆記")
+        shot(n, "5-編輯-筆記-多人")
     }
 }

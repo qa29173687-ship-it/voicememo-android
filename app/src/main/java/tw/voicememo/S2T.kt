@@ -49,10 +49,33 @@ object Transcript {
         if (sb.isNotEmpty() && sb.last() !in "。！？.!?") { if (sb.last() in "，,") sb.setLength(sb.length - 1); sb.append('。') }
         return sb.toString()
     }
+    /** 說話者逐段：一人時不加標籤；多人時「說話者 N：…」，N 依出現順序，同一人連續發言合併成一段 */
+    fun speakers(turns: List<Diar.Turn>): String {
+        if (turns.isEmpty()) return ""
+        val order = LinkedHashMap<Int, Int>(); turns.forEach { if (it.spk !in order) order[it.spk] = order.size + 1 }
+        if (order.size == 1) return join(turns.map { Triple(it.text, it.start, it.end) })
+        val sb = StringBuilder(); var last = -1
+        for (t in turns) {
+            val txt = t.text.trim(); if (txt.isEmpty()) continue
+            if (t.spk == last) { if (sb.last() !in "，。！？、,.!?") sb.append('，'); sb.append(txt) }
+            else { if (sb.isNotEmpty()) { if (sb.last() !in "。！？.!?") sb.append('。'); sb.append('\n') }; sb.append("說話者 ${order[t.spk]}：").append(txt) }
+            last = t.spk
+        }
+        if (sb.last() !in "。！？.!?") sb.append('。')
+        return sb.toString()
+    }
+    private val label = Regex("^([^：\n]{1,12})：", RegexOption.MULTILINE)
+    /** 逐字稿裡的說話者名稱（依出現順序） */
+    fun labels(text: String): List<String> = label.findAll(text).map { it.groupValues[1] }.distinct().toList().takeIf { it.size > 1 } ?: emptyList()
+    /** 改名：只改每行開頭的「舊名：」 */
+    fun rename(text: String, old: String, new: String): String {
+        val n = new.trim().replace("：", "").replace("\n", ""); if (n.isEmpty()) return text
+        return Regex("^" + Regex.escape(old) + "：", RegexOption.MULTILINE).replace(text, Regex.escapeReplacement(n) + "：")
+    }
     private val filler = Regex("^(嗯|啊|呃|那個|然後|就是|喂|好|對)+")
     /** 第一個有意義的句子當標題（≤20 字） */
     fun title(text: String): String? {
-        for (raw in text.split(Regex("[，。！？\\n]"))) {
+        for (raw in text.replace(label, "").split(Regex("[，。！？\\n]"))) {
             val s = raw.trim().replace(filler, ""); if (s.length >= 2) return s.take(20)
         }
         return null

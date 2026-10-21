@@ -33,7 +33,7 @@ class NoteActivity : AppCompatActivity() {
     private lateinit var title: EditText
     private lateinit var text: EditText; private lateinit var tags: EditText
     private lateinit var asrBox: LinearLayout; private lateinit var asrText: TextView; private lateinit var asrBtn: TextView
-    private var lastAsr: String? = null; private var origTitle = ""
+    private var lastAsr: String? = null; private lateinit var spkBtn: TextView; private var origTitle = ""
     private lateinit var remindBox: View; private lateinit var remindBtn: TextView; private lateinit var memoBox: View; private lateinit var noteBox: View
     private lateinit var pin: CheckBox; private lateinit var done: CheckBox; private lateinit var textLabel: TextView
     private val typeViews = mutableListOf<TextView>(); private var typeTouched = false
@@ -61,7 +61,9 @@ class NoteActivity : AppCompatActivity() {
     fun startAsr(n: Note, askOverwrite: Boolean) {
         if (askOverwrite && n.text.isNotBlank()) { AlertDialog.Builder(this).setTitle("重新轉文字？").setMessage("目前的內容會被新的逐字稿取代。")
             .setPositiveButton("重新轉") { _, _ -> startAsr(n, false) }.setNegativeButton("取消", null).show(); return }
-        if (!AsrModel.ready(this)) { AlertDialog.Builder(this).setTitle("下載語音轉文字模型").setMessage("第一次使用需要下載 SenseVoice 中文模型，約 ${AsrModel.SIZE_MB}MB，建議用 Wi-Fi。下載後完全離線辨識，不會上傳錄音。")
+        val needDiar = Transcriber.diarOn(this) && !AsrModel.diarReady(this)
+        if (!AsrModel.ready(this) || needDiar) { val mb = (if (AsrModel.ready(this)) 0 else AsrModel.SIZE_MB) + (if (needDiar) AsrModel.DIAR_MB else 0)
+            AlertDialog.Builder(this).setTitle("下載離線辨識模型").setMessage("第一次使用需要下載" + (if (AsrModel.ready(this)) "" else " SenseVoice 中文語音模型") + (if (needDiar) " 說話者分辨模型" else "") + "，共約 ${mb}MB，建議用 Wi-Fi。下載後完全離線辨識，錄音不會離開手機。")
             .setPositiveButton("下載並轉文字") { _, _ -> go(n) }.setNegativeButton("先不要", null).show(); return }
         go(n)
     }
@@ -85,6 +87,7 @@ class NoteActivity : AppCompatActivity() {
         lastAsr = st
         asrText.text = st ?: when { !note.hasAudio -> ""; note.asr == 2 -> "✓ 已轉成文字（SenseVoice 離線辨識）"; else -> "可把錄音轉成文字" }
         asrBtn.text = if (st != null) "取消" else if (note.asr == 0 && note.text.isBlank()) "轉文字" else "重新轉文字"
+        spkBtn.visibility = if (st == null && Transcript.labels(text.text.toString()).isNotEmpty()) View.VISIBLE else View.GONE
         text.isEnabled = st == null; text.hint = if (st != null) "轉文字中，完成後可編輯…" else "可直接打字，或按「轉文字」"
     }
 
@@ -99,6 +102,7 @@ class NoteActivity : AppCompatActivity() {
         audioFile()?.let { col.addView(buildPlayer(), lp(MP, WC).apply { topMargin = dp(14) }) }
         asrBox = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(4), dp(10), 0, 0); visibility = if (note.hasAudio) View.VISIBLE else View.GONE }
         asrText = tv("", 13f, C.OR); asrBox.addView(asrText, lp(0, WC, 1f))
+        spkBtn = btn("改名", C.CARD2, C.OR) { renameSpeakers() }; asrBox.addView(spkBtn, lp(WC, WC).apply { rightMargin = dp(8) })
         asrBtn = btn("轉文字") { if (Transcriber.status(note.id) != null) Transcriber.cancel(note.id) else { save(); startAsr(note, true) } }; asrBox.addView(asrBtn)
         col.addView(asrBox)
 
@@ -166,6 +170,17 @@ class NoteActivity : AppCompatActivity() {
                 updateRemindBtn()
             }, base.hour, base.minute, true).show()
         }, base.year, base.monthValue - 1, base.dayOfMonth).show()
+    }
+
+    private fun renameSpeakers() {
+        val names = Transcript.labels(text.text.toString()); if (names.isEmpty()) return
+        AlertDialog.Builder(this).setTitle("要改哪一位？").setItems(names.toTypedArray()) { _, i ->
+            val e = field(names[i]).apply { setText(names[i]); selectAll() }
+            val box = LinearLayout(this).apply { setPadding(dp(20), dp(8), dp(20), 0); addView(e, lp(MP, WC)) }
+            AlertDialog.Builder(this).setTitle("「${names[i]}」改成").setView(box)
+                .setPositiveButton("全部改") { _, _ -> text.setText(Transcript.rename(text.text.toString(), names[i], e.text.toString())); save(); refreshAsr() }
+                .setNegativeButton("取消", null).show()
+        }.show()
     }
 
     fun save(): Boolean {

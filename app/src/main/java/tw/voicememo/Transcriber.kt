@@ -16,7 +16,14 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.k2fsa.sherpa.onnx.FastClusteringConfig
 import com.k2fsa.sherpa.onnx.OfflineModelConfig
+import com.k2fsa.sherpa.onnx.OfflineSpeakerDiarization
+import com.k2fsa.sherpa.onnx.OfflineSpeakerDiarizationConfig
+import com.k2fsa.sherpa.onnx.OfflineSpeakerSegmentationModelConfig
+import com.k2fsa.sherpa.onnx.OfflineSpeakerSegmentationPyannoteModelConfig
+import com.k2fsa.sherpa.onnx.SpeakerEmbeddingExtractor
+import com.k2fsa.sherpa.onnx.SpeakerEmbeddingExtractorConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig
@@ -40,6 +47,16 @@ object AsrModel {
     fun dir(ctx: Context) = File(ctx.filesDir, "sensevoice").apply { mkdirs() }
     fun ready(ctx: Context) = File(dir(ctx), ".ok").exists()
     fun delete(ctx: Context) { dir(ctx).deleteRecursively() }
+    // 說話者分辨：pyannote segmentation-3.0 + 3D-Speaker ERes2NetV2 (zh-cn)
+    const val SEG = "seg.onnx"; const val EMB = "emb.onnx"; const val DIAR_MB = 77
+    private const val SEG_URL = "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx"
+    private const val EMB_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2netv2_sv_zh-cn_16k-common.onnx"
+    fun ddir(ctx: Context) = File(ctx.filesDir, "diar").apply { mkdirs() }
+    fun diarReady(ctx: Context) = File(ddir(ctx), ".ok").exists()
+    fun deleteDiar(ctx: Context) { ddir(ctx).deleteRecursively() }
+    fun downloadDiar(ctx: Context, progress: (Int) -> Unit, cancelled: () -> Boolean) {
+        val d = ddir(ctx); fetch(SEG_URL, File(d, SEG), {}, cancelled); fetch(EMB_URL, File(d, EMB), progress, cancelled); File(d, ".ok").writeText("1")
+    }
     /** 可續傳下載；progress 0..100；cancelled() 為 true 時中止 */
     fun download(ctx: Context, progress: (Int) -> Unit, cancelled: () -> Boolean) {
         val d = dir(ctx)
@@ -116,7 +133,8 @@ class Transcriber : Service() {
         val progress = ConcurrentHashMap<Long, Int>() // -1 排隊、0..100 進度
         @Volatile var downloading = -1; @Volatile var error: String? = null; @Volatile private var cancelId = 0L; @Volatile var cancelAll = false
         fun status(id: Long): String? = progress[id]?.let { p ->
-            when { downloading >= 0 -> "下載語音模型 $downloading%"; p < 0 -> "等待轉文字…"; else -> "轉文字中… $p%" } }
+            when { downloading >= 0 -> "下載模型 $downloading%"; p < 0 -> "等待轉文字…"; else -> "$phase… $p%" } }
+        @Volatile var phase = "轉文字中"
         fun enqueue(ctx: Context, id: Long) {
             if (progress.putIfAbsent(id, -1) != null) return
             queue.add(id); cancelAll = false
@@ -124,6 +142,9 @@ class Transcriber : Service() {
         }
         fun cancel(id: Long) { if (queue.remove(id)) progress.remove(id); cancelId = id }
         fun auto(ctx: Context) = ctx.getSharedPreferences("ui", Context.MODE_PRIVATE).getBoolean("autoAsr", true)
+        fun diarOn(ctx: Context) = ctx.getSharedPreferences("ui", Context.MODE_PRIVATE).getBoolean("diar", true)
+        /** 0 = 自動，2..4 = 固定人數，5 = 5 人以上（自動、門檻放寬） */
+        fun spkCount(ctx: Context) = ctx.getSharedPreferences("ui", Context.MODE_PRIVATE).getInt("spk", 0)
     }
     private var worker: Thread? = null; private var rec: OfflineRecognizer? = null; private var cur = 0L
     private fun nm() = getSystemService(NotificationManager::class.java)
@@ -145,7 +166,8 @@ class Transcriber : Service() {
         try {
             while (true) {
                 val id = queue.poll() ?: break; cur = id; cancelId = 0
-                try { if (!AsrModel.ready(this)) download(); run(id) }
+                try { if (!AsrModel.ready(this)) download(); if (diarOn(this) && !AsrModel.diarReady(this)) downloadDiar()
+                      if (diarOn(this)) runDiar(id) else run(id) }
                 catch (e: InterruptedException) { }
                 catch (e: Throwable) { error = "轉文字失敗：${e.message}" }
                 finally { progress.remove(id); cur = 0; downloading = -1 }
@@ -161,6 +183,10 @@ class Transcriber : Service() {
         downloading = 0; show("下載語音模型（約 ${AsrModel.SIZE_MB}MB）", 0)
         AsrModel.download(this, { downloading = it; show("下載語音模型 $it%", it) }, ::stop); downloading = -1
     }
+    private fun downloadDiar() {
+        downloading = 0; show("下載說話者模型（約 ${AsrModel.DIAR_MB}MB）", 0)
+        AsrModel.downloadDiar(this, { downloading = it; show("下載說話者模型 $it%", it) }, ::stop); downloading = -1
+    }
     private fun recognizer(): OfflineRecognizer = rec ?: run {
         val d = AsrModel.dir(this)
         OfflineRecognizer(null, OfflineRecognizerConfig(modelConfig = OfflineModelConfig(
@@ -174,7 +200,7 @@ class Transcriber : Service() {
         val vad = Vad(assets, VadModelConfig(sileroVadModelConfig = SileroVadModelConfig(model = "silero_vad.onnx", threshold = 0.5f,
             minSilenceDuration = 0.5f, minSpeechDuration = 0.25f, windowSize = 512, maxSpeechDuration = 20f), sampleRate = 16000, numThreads = 1))
         val segs = mutableListOf<Triple<String, Double, Double>>(); val win = FloatArray(512); var wn = 0; var lastSave = 0L
-        progress[id] = 0; show("轉文字中… 0%", 0)
+        progress[id] = 0; phase = "轉文字中"; show("轉文字中… 0%", 0)
         fun drain() { while (!vad.empty()) { val sg = vad.front(); vad.pop()
             val st = r.createStream(); st.acceptWaveform(sg.samples, 16000); r.decode(st); val t = r.getResult(st).text; st.release()
             val tt = s2t.convert(t).trim(); if (tt.isNotEmpty()) segs += Triple(tt, sg.start / 16000.0, (sg.start + sg.samples.size) / 16000.0)
@@ -190,10 +216,75 @@ class Transcriber : Service() {
         write(id, segs, !stop())
     }
 
+    private fun asr(x: FloatArray, from: Int, to: Int): String {
+        val r = recognizer(); val sb = StringBuilder(); var a = from
+        while (a < to) { // SenseVoice 一次最多約 30 秒，切成 ≤20 秒
+            val b = minOf(to, a + 20 * 16000); if (b - a < 16000 * 3 / 10) break
+            val st = r.createStream(); st.acceptWaveform(x.copyOfRange(a, b), 16000); r.decode(st); sb.append(r.getResult(st).text); st.release(); a = b
+        }
+        return S2T.get(this).convert(sb.toString()).trim()
+    }
+
+    /** 準確優先：先分辨說話者，再逐段（每個說話者的一段）辨識。每 10 分鐘一個視窗，跨視窗用聲紋比對同一人 */
+    private fun runDiar(id: Long) {
+        val n0 = Store.get(this, id) ?: return; val f = Store.audio(this, n0); if (!f.exists()) return
+        val pcm = File(cacheDir, "asr_$id.pcm"); progress[id] = 0; show("準備音訊…", 0)
+        try {
+            // 1) 串流解碼成 16kHz 16-bit 暫存檔（每小時約 115MB），不佔記憶體
+            pcm.outputStream().buffered(1 shl 16).use { o ->
+                Decoder.stream(f) { x, us, dur ->
+                    val bb = java.nio.ByteBuffer.allocate(x.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+                    for (v in x) bb.putShort((v.coerceIn(-1f, 1f) * 32767).toInt().toShort()); o.write(bb.array())
+                    if (dur > 0) setP(id, (us * 10 / dur).toInt(), "整理音訊"); !stop() } }
+            if (stop()) { write(id, emptyList<Diar.Turn>(), false); return }
+            val total = (pcm.length() / 2).toInt(); val win = 600 * 16000
+            val cuts = Diar.cuts(pcm, total, win)
+            val spkN = spkCount(this)
+            val cfg = OfflineSpeakerDiarizationConfig(
+                segmentation = OfflineSpeakerSegmentationModelConfig(pyannote = OfflineSpeakerSegmentationPyannoteModelConfig(File(AsrModel.ddir(this), AsrModel.SEG).path), numThreads = 4),
+                embedding = SpeakerEmbeddingExtractorConfig(model = File(AsrModel.ddir(this), AsrModel.EMB).path, numThreads = 4),
+                clustering = FastClusteringConfig(numClusters = if (spkN in 2..4) spkN else -1, threshold = if (spkN == 5) 0.7f else Diar.THRESHOLD),
+                minDurationOn = 0.3f, minDurationOff = 0.5f)
+            val sd = OfflineSpeakerDiarization(null, cfg)
+            val ex = SpeakerEmbeddingExtractor(null, SpeakerEmbeddingExtractorConfig(model = File(AsrModel.ddir(this), AsrModel.EMB).path, numThreads = 4))
+            val link = Diar.Linker(if (spkN in 2..4) spkN else 0); val turns = mutableListOf<Diar.Turn>()
+            try {
+                for (k in 0 until cuts.size - 1) {
+                    if (stop()) break
+                    val a = cuts[k]; val b = cuts[k + 1]; val x = Diar.read(pcm, a, b - a)
+                    val base = 10 + 90 * k / (cuts.size - 1); val span = 90 / (cuts.size - 1)
+                    setP(id, base, "分辨說話者")
+                    val segs = sd.processWithCallback(x, { done, all, _ -> if (all > 0) setP(id, base + span / 2 * done / all, "分辨說話者"); 0 }, 0L)
+                    val local = Diar.merge(segs.map { Diar.Seg((it.start * 16000).toInt(), (it.end * 16000).toInt(), it.speaker) })
+                    // 每個本地說話者取最長幾段算聲紋，對到全域說話者
+                    val map = HashMap<Int, Int>()
+                    for (spk in local.map { it.spk }.distinct()) {
+                        val parts = local.filter { it.spk == spk }.sortedByDescending { it.b - it.a }
+                        val st = ex.createStream(); var len = 0
+                        for (p in parts) { if (len > 20 * 16000) break; val e = minOf(p.b, p.a + 20 * 16000 - len); st.acceptWaveform(x.copyOfRange(p.a, e), 16000); len += e - p.a }
+                        st.inputFinished(); map[spk] = if (ex.isReady(st)) link.assign(ex.compute(st)) else link.assign(null); st.release()
+                    }
+                    for ((i, t) in local.withIndex()) {
+                        if (stop()) break
+                        val txt = asr(x, t.a, t.b)
+                        if (txt.isNotEmpty()) turns += Diar.Turn(map[t.spk] ?: 0, txt, (a + t.a) / 16000.0, (a + t.b) / 16000.0)
+                        setP(id, base + span / 2 + span / 2 * (i + 1) / local.size, "辨識文字")
+                        val now = System.currentTimeMillis(); if (now - lastWrite > 3000) { lastWrite = now; write(id, turns, false) }
+                    }
+                }
+            } finally { sd.release(); ex.release() }
+            write(id, turns, !stop())
+        } finally { pcm.delete() }
+    }
+    private var lastWrite = 0L
+    private fun setP(id: Long, p: Int, what: String) { val q = p.coerceIn(0, 99); if (q != progress[id]) { progress[id] = q; phase = what; show("$what… $q%", q) } }
+
     /** 寫回記事（只動逐字稿相關欄位）；final 時判斷標題、提醒時間、正式檔名 */
-    private fun write(id: Long, segs: List<Triple<String, Double, Double>>, final: Boolean) {
+    private fun write(id: Long, segs: List<Triple<String, Double, Double>>, final: Boolean) = writeText(id, Transcript.join(segs), segs.isEmpty(), final)
+    @JvmName("writeTurns") private fun write(id: Long, turns: List<Diar.Turn>, final: Boolean) = writeText(id, Transcript.speakers(turns), turns.isEmpty(), final)
+    private fun writeText(id: Long, t0: String, empty: Boolean, final: Boolean) {
         val n = Store.get(this, id) ?: return
-        var text = Transcript.join(segs)
+        var text = t0
         if (!final) text += if (stop()) "\n（轉文字已取消，以上為部分內容）" else "\n…"
         if (final && text.isNotEmpty()) {
             if (Names.isDefaultTitle(n.title)) Transcript.title(text)?.let { n.title = it }
@@ -203,7 +294,7 @@ class Transcriber : Service() {
                 if (times.size > 1) text += "\n\n其他提到的時間：\n" + times.drop(1).joinToString("\n") { "• " + Names.date(it.first) + "　" + it.second }
             }
         }
-        if (segs.isEmpty() && final) text = "（沒有辨識到語音）"
+        if (empty && final) text = "（沒有辨識到語音）"
         n.text = text; n.asr = if (final) 2 else 1
         if (final || stop()) { Store.save(this, n); Files.finalize(this, n); Reminders.sync(this, n) } else Store.save(this, n)
     }
