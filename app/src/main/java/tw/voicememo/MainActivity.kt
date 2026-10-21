@@ -56,7 +56,7 @@ class MainActivity : AppCompatActivity() {
         tabList = tv("📋  記事", 15f, C.SUB, true).apply { gravity = Gravity.CENTER; setPadding(0, dp(10), 0, dp(10)); setOnClickListener { show(true) } }
         tabs.addView(tabRec, lp(0, WC, 1f)); tabs.addView(tabList, lp(0, WC, 1f)); root.addView(tabs)
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
-        setContentView(root); show(false)
+        setContentView(root); show(intent.getBooleanExtra("list", false))
         // 標題避開狀態列／瀏海；底部分頁列避開三鍵或手勢導覽列
         EdgeInsets.pad(root, bottom = false); EdgeInsets.pad(tabs, top = false, left = false, right = false)
     }
@@ -92,6 +92,9 @@ class MainActivity : AppCompatActivity() {
                 override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                 override fun afterTextChanged(s: Editable?) { query = s.toString(); reload() }
             }) }, lp(MP, WC).apply { topMargin = dp(10) })
+        addView(btn("📋 貼上 Grok 整理的待辦", C.CARD, C.OR) {
+            if (TodoActivity.lastSrc(this@MainActivity) == 0L) Toast.makeText(this@MainActivity, "請先在記事裡按「送到 Grok 整理」", Toast.LENGTH_LONG).show()
+            else startActivity(Intent(this@MainActivity, TodoActivity::class.java)) }, lp(MP, WC).apply { topMargin = dp(8) })
         selBar = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(10), 0, 0) }
         selText = tv("點選要上傳的項目", 14f, C.TX); selBar.addView(selText, lp(0, WC, 1f))
         selBar.addView(btn("全選") { selected.clear(); shown.forEach { selected += it.id }; reload() }, lp(WC, WC).apply { rightMargin = dp(8) })
@@ -190,7 +193,8 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { ui.edit().putInt("spk", k).apply(); paint() } }; vs += v; cnt.addView(v) }
         paint(); cnt.alpha = if (dsw.isChecked) 1f else .4f; box.addView(cnt)
         box.addView(tv("準確優先：先分辨說話者再逐段辨識，比只轉文字慢約 2–4 倍。", 12f, C.SUB).apply { setPadding(0, dp(8), 0, 0) })
-        val d = androidx.appcompat.app.AlertDialog.Builder(this).setTitle("設定").setView(box).setPositiveButton("完成", null)
+        val d = androidx.appcompat.app.AlertDialog.Builder(this).setTitle("設定").setView(android.widget.ScrollView(this).apply { addView(box) })
+            .setPositiveButton("完成", null)
             .setNeutralButton("刪除模型") { _, _ ->
                 if (Transcriber.downloading >= 0 || Transcriber.progress.isNotEmpty()) Toast.makeText(this, "轉文字或下載中，請先取消", Toast.LENGTH_SHORT).show()
                 else { AsrModel.delete(this); AsrModel.deleteDiar(this); Toast.makeText(this, "已刪除語音與說話者模型", Toast.LENGTH_SHORT).show() } }.show()
@@ -210,6 +214,7 @@ class MainActivity : AppCompatActivity() {
         if (c == 7) { if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) RecService.send(this, RecService.A_START)
                       else Toast.makeText(this, "需要麥克風權限才能錄音", Toast.LENGTH_LONG).show() }
     }
+    override fun onNewIntent(i: Intent) { super.onNewIntent(i); if (i.getBooleanExtra("list", false)) show(true) }
     override fun onResume() { super.onResume(); reload(); h.removeCallbacks(poll); h.post(poll) }
     override fun onPause() { super.onPause(); h.removeCallbacks(poll) }
     @Deprecated("Deprecated in Java")

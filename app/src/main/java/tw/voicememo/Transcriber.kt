@@ -167,7 +167,8 @@ class Transcriber : Service() {
             while (true) {
                 val id = queue.poll() ?: break; cur = id; cancelId = 0
                 try { if (!AsrModel.ready(this)) download(); if (diarOn(this) && !AsrModel.diarReady(this)) downloadDiar()
-                      if (diarOn(this)) runDiar(id) else run(id) }
+                      if (diarOn(this)) runDiar(id) else run(id)
+ }
                 catch (e: InterruptedException) { }
                 catch (e: Throwable) { error = "轉文字失敗：${e.message}" }
                 finally { progress.remove(id); cur = 0; downloading = -1 }

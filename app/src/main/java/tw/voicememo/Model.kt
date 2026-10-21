@@ -14,19 +14,19 @@ data class Note(
     var text: String = "", var file: String = "",
     var durationMs: Long = 0, var exported: String = "",
     var type: Int = MEMO, var remindAt: Long = 0, var pinned: Boolean = false, var done: Boolean = false, var tags: String = "",
-    var autoType: Boolean = true, var asr: Int = 0, // asr 0 無 1 進行中/部分 2 完成
+    var autoType: Boolean = true, var asr: Int = 0, var sourceId: Long = 0, // asr 0 無 1 進行中/部分 2 完成
 ) {
     val hasAudio get() = file.isNotBlank()
     fun toJson(): JSONObject = JSONObject().put("id", id).put("title", title).put("text", text).put("file", file)
         .put("durationMs", durationMs).put("exported", exported)
-        .put("type", type).put("remindAt", remindAt).put("pinned", pinned).put("done", done).put("tags", tags).put("autoType", autoType).put("asr", asr)
+        .put("type", type).put("remindAt", remindAt).put("pinned", pinned).put("done", done).put("tags", tags).put("autoType", autoType).put("asr", asr).put("sourceId", sourceId)
     companion object {
         const val REMIND = 0; const val MEMO = 1; const val NOTE = 2
         val TYPES = arrayOf("提醒", "備忘", "筆記")
         fun from(o: JSONObject) = Note(o.getLong("id"), o.optString("title"), o.optString("text"), o.optString("file"),
             o.optLong("durationMs"), o.optString("exported"),
             o.optInt("type", MEMO), o.optLong("remindAt"), o.optBoolean("pinned"), o.optBoolean("done"), o.optString("tags"),
-            o.optBoolean("autoType", true), o.optInt("asr"))
+            o.optBoolean("autoType", true), o.optInt("asr"), o.optLong("sourceId"))
     }
 }
 

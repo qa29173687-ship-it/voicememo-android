@@ -4,7 +4,7 @@ val ksProps = Properties().apply { val f = rootProject.file("keystore/keystore.p
 android {
     namespace = "tw.voicememo"
     compileSdk = 35
-    defaultConfig { applicationId = "tw.voicememo"; minSdk = 26; targetSdk = 35; versionCode = 4; versionName = "1.2.1"
+    defaultConfig { applicationId = "tw.voicememo"; minSdk = 26; targetSdk = 35; versionCode = 5; versionName = "1.3.0"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") } }
     signingConfigs {
         if (ksProps.isNotEmpty()) create("release") {

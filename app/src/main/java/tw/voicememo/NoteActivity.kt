@@ -105,6 +105,12 @@ class NoteActivity : AppCompatActivity() {
         spkBtn = btn("改名", C.CARD2, C.OR) { renameSpeakers() }; asrBox.addView(spkBtn, lp(WC, WC).apply { rightMargin = dp(8) })
         asrBtn = btn("轉文字") { if (Transcriber.status(note.id) != null) Transcriber.cancel(note.id) else { save(); startAsr(note, true) } }; asrBox.addView(asrBtn)
         col.addView(asrBox)
+        val gRow = LinearLayout(this).apply { setPadding(0, dp(10), 0, 0) }
+        gRow.addView(btn("✨ 送到 Grok 整理", C.CARD2, C.OR) { if (save()) { if (note.text.isBlank()) Toast.makeText(this, "還沒有文字，請先轉文字或輸入內容", Toast.LENGTH_SHORT).show() else Grok.send(this, note) } }, lp(0, WC, 1f).apply { rightMargin = dp(8) })
+        gRow.addView(btn("📋 貼上待辦", C.CARD2, C.TX) { if (save()) startActivity(Intent(this, TodoActivity::class.java).putExtra("id", note.id)) }, lp(0, WC, 1f))
+        col.addView(gRow)
+        if (note.sourceId != 0L) Store.get(this, note.sourceId)?.let { s -> col.addView(tv("🔗 來源錄音：${s.title}", 14f, C.OR).apply {
+            setPadding(dp(4), dp(12), 0, 0); setOnClickListener { startActivity(Intent(this@NoteActivity, NoteActivity::class.java).putExtra("id", s.id)) } }) }
 
         col.addView(label("類型"))
         val seg = LinearLayout(this).apply { background = round(C.CARD, dp(20).toFloat()); setPadding(dp(3), dp(3), dp(3), dp(3)) }

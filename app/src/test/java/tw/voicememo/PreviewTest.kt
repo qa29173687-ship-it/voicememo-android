@@ -50,5 +50,12 @@ class PreviewTest {
         shot(e, "4-編輯-提醒")
         val n = Robolectric.buildActivity(NoteActivity::class.java, Intent(c, NoteActivity::class.java).putExtra("id", ms(20, 14, 0))).setup().get()
         shot(n, "5-編輯-筆記-多人")
+        val t = Robolectric.buildActivity(TodoActivity::class.java, Intent(c, TodoActivity::class.java).putExtra("id", ms(20, 14, 0)).putExtra("preview", true)).setup().get()
+        t.show(TodoResult(listOf(
+            Todo("（範例）整理第三章重點給大家", "小美", ms(23, 20, 0), "高", "小美：週五晚上前我把重點整理出來"),
+            Todo("（範例）下次讀書會負責分享", "說話者 2", ms(27, 19, 30), "中", "好，下次輪到你分享"),
+            Todo("（範例）買下一本書", null, null, "低", "下一本可以讀原子習慣作者的新書")),
+            listOf("（範例）討論《原子習慣》第三章", "（範例）環境設計是最實用的方法", "（範例）下次由說話者 2 分享")))
+        shot(t, "6-整理待辦-範例")
     }
 }
